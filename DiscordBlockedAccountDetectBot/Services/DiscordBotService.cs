@@ -18,15 +18,22 @@ namespace DiscordBlockedAccountDetectBot.Services
         private readonly XService _xService;
         private readonly IHostApplicationLifetime _appLifetime;
 
-        // Regex for x.com or twitter.com links. 
-        // Handles: https://twitter.com/user/status/123... or https://x.com/...
-        private static readonly Regex TwitterRegex = new Regex(@"https?:\/\/(www\.)?(twitter|x)\.com\/[a-zA-Z0-9_]+\/status\/[0-9]+", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+        // List of allowed hosts for Twitter/X links
+        private static readonly List<string> AllowedHosts = new List<string> {
+            "www.twitter.com", "twitter.com",
+            "www.x.com", "x.com",
+            "www.fixvx.com" ,"fixvx.com",
+            "www.vxtwitter.com" ,"vxtwitter.com" ,
+            "www.fxtwitter.com" ,"fxtwitter.com" };
+
+        // Regex to extract the host and path from URLs
+        private static readonly Regex UrlRegex = new Regex(@"https?:\/\/([a-zA-Z0-9\-\.]+)\/[a-zA-Z0-9_]+\/status\/[0-9]+", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
         public DiscordBotService(
-            BotConfig config, 
-            RedisService redisService, 
-            IHttpClientFactory httpClientFactory, 
-            ILogger<DiscordBotService> logger, 
+            BotConfig config,
+            RedisService redisService,
+            IHttpClientFactory httpClientFactory,
+            ILogger<DiscordBotService> logger,
             XService xService,
             IHostApplicationLifetime appLifetime)
         {
@@ -131,12 +138,16 @@ namespace DiscordBlockedAccountDetectBot.Services
             if (message.Author.IsBot) return;
             if (string.IsNullOrEmpty(message.Content)) return;
 
-            var matches = TwitterRegex.Matches(message.Content);
+            var matches = UrlRegex.Matches(message.Content);
             if (matches.Count == 0) return;
 
             foreach (Match match in matches)
             {
-                await ProcessLinkAsync(message, match.Value);
+                var host = match.Groups[1].Value.ToLower();
+                if (AllowedHosts.Contains(host))
+                {
+                    await ProcessLinkAsync(message, match.Value);
+                }
             }
         }
 
@@ -144,6 +155,8 @@ namespace DiscordBlockedAccountDetectBot.Services
         {
             try
             {
+                _logger.LogInformation("Start fetch: {url}", url);
+
                 // Replace domain with api.vxtwitter.com
                 var uri = new Uri(url);
                 var builder = new UriBuilder(uri)
@@ -161,7 +174,7 @@ namespace DiscordBlockedAccountDetectBot.Services
                     // If fetch fails, maybe warn? Or ignore? Prompt says: "若其中一個流程出錯則反應一個 ⚠️"
                     // "Fetching data" is a process.
                     await message.AddReactionAsync(new Emoji("⚠️"));
-                    _logger.LogWarning("Failed to fetch api.vxtwitter: {response.ReasonPhrase}", response.ReasonPhrase);
+                    _logger.LogWarning("Failed to fetch api.vxtwitter.com: {response.ReasonPhrase}", response.ReasonPhrase);
                     return;
                 }
 
