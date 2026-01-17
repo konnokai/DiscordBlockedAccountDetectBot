@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "DiscordBlockedAccountDetectBot": {
+      "commandName": "Project"
+    },
+    "Container (Dockerfile)": {
+      "commandName": "Docker"
+    }
+  }
+}

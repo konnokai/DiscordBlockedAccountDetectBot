@@ -1,0 +1,20 @@
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Build results
+bin/
+obj/
+
+# IDE
+.vs/
+.vscode/
+*.user
+
+# Tokens and sensitive data
+x_tokens.json
+
+# OS
+.DS_Store
+Thumbs.db

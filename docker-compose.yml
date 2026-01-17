@@ -1,0 +1,12 @@
+services:
+  discord-blocked-account-detect-bot:
+    container_name: discord-blocked-account-detect-bot
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - 3000:3000
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    network_mode: bridge
