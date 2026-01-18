@@ -173,14 +173,19 @@ namespace DiscordBlockedAccountDetectBot.Services
                 {
                     // If fetch fails, maybe warn? Or ignore? Prompt says: "若其中一個流程出錯則反應一個 ⚠️"
                     // "Fetching data" is a process.
-                    await message.AddReactionAsync(new Emoji("⚠️"));
+                    await message.AddReactionAsync(new Emoji("🛠️"));
                     _logger.LogWarning("Failed to fetch api.vxtwitter.com: {response.ReasonPhrase}", response.ReasonPhrase);
                     return;
                 }
 
-                var json = await response.Content.ReadAsStringAsync();
-                var tweetData = JsonSerializer.Deserialize<VXTwitterResponse>(json);
+                var responseContext = await response.Content.ReadAsStringAsync();
+                if (responseContext.Contains("Failed to scan your link"))
+                {
+                    _logger.LogWarning("api.vxtwitter.com returned failure for URL: {url}", url);
+                    await message.AddReactionAsync(new Emoji("🛠️"));
+                }
 
+                var tweetData = JsonSerializer.Deserialize<VXTwitterResponse>(responseContext);
                 if (tweetData != null && !string.IsNullOrEmpty(tweetData.UserScreenName))
                 {
                     // Check if blocked
@@ -195,13 +200,18 @@ namespace DiscordBlockedAccountDetectBot.Services
                     // Parsing failed or no user name? 
                     // Is this an error flow? "若其中一個流程出錯"
                     // If we got 200 OK but bad JSON, it's an error.
-                    await message.AddReactionAsync(new Emoji("⚠️"));
+                    await message.AddReactionAsync(new Emoji("🛠️"));
                 }
+            }
+            catch (JsonException)
+            {
+                _logger.LogError("JSON parsing error for URL: {url}", url);
+                await message.AddReactionAsync(new Emoji("🛠️"));
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error processing link");
-                await message.AddReactionAsync(new Emoji("⚠️"));
+                await message.AddReactionAsync(new Emoji("🛠️"));
             }
         }
     }
