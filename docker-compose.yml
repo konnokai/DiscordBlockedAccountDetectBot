@@ -6,7 +6,7 @@ services:
     env_file:
       - .env
     ports:
-      - 3000:3000
+      - 30678:30678
     extra_hosts:
       - "host.docker.internal:host-gateway"
     network_mode: bridge
