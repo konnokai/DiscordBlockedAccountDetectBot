@@ -181,9 +181,9 @@ namespace DiscordBlockedAccountDetectBot.Services
             }
         }
 
-        private async Task RefreshTokenAsync()
+        private async Task<bool> RefreshTokenAsync()
         {
-            if (_currentToken == null || string.IsNullOrEmpty(_currentToken.RefreshToken)) return;
+            if (_currentToken == null || string.IsNullOrEmpty(_currentToken.RefreshToken)) return false;
 
             var content = new FormUrlEncodedContent(new Dictionary<string, string>
             {
@@ -207,7 +207,7 @@ namespace DiscordBlockedAccountDetectBot.Services
                 _logger.LogError($"Failed to refresh token: {respContent}");
                 // If refresh failed (e.g. invalid grant), we might need to re-login. 
                 // For now, simple error.
-                return;
+                return false;
             }
 
             _currentToken = JsonSerializer.Deserialize<OAuthTokenResponse>(respContent);
@@ -216,7 +216,10 @@ namespace DiscordBlockedAccountDetectBot.Services
                 _currentToken.ExpiresAt = DateTime.UtcNow.AddSeconds(_currentToken.ExpiresIn);
                 await SaveTokensAsync();
                 _logger.LogInformation("Successfully refreshed token.");
+                return true;
             }
+            
+            return false;
         }
 
         public async Task SyncBlockedListAsync()
@@ -230,7 +233,12 @@ namespace DiscordBlockedAccountDetectBot.Services
              // Auto Refresh if needed
              if (DateTime.UtcNow >= _currentToken.ExpiresAt.AddMinutes(-5))
              {
-                 await RefreshTokenAsync();
+                 var refreshSuccess = await RefreshTokenAsync();
+                 if (!refreshSuccess)
+                 {
+                     _logger.LogWarning("Token refresh failed. Aborting sync blocked list.");
+                     return;
+                 }
              }
 
              try 
