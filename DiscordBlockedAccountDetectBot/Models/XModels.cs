@@ -47,6 +47,45 @@ namespace DiscordBlockedAccountDetectBot.Models
         public string UserScreenName { get; set; } = string.Empty;
     }
 
+    public class XApiError
+    {
+        [JsonPropertyName("title")]
+        public string? Title { get; set; }
+
+        [JsonPropertyName("detail")]
+        public string? Detail { get; set; }
+
+        [JsonPropertyName("type")]
+        public string? Type { get; set; }
+
+        [JsonPropertyName("status")]
+        public int? Status { get; set; }
+
+        [JsonPropertyName("client_id")]
+        public string? ClientId { get; set; }
+
+        [JsonPropertyName("reason")]
+        public string? Reason { get; set; }
+
+        [JsonPropertyName("required_enrollment")]
+        public string? RequiredEnrollment { get; set; }
+
+        [JsonPropertyName("registration_url")]
+        public string? RegistrationUrl { get; set; }
+
+        [JsonPropertyName("errors")]
+        public List<XApiErrorDetail>? Errors { get; set; }
+    }
+
+    public class XApiErrorDetail
+    {
+        [JsonPropertyName("message")]
+        public string? Message { get; set; }
+
+        [JsonPropertyName("parameters")]
+        public Dictionary<string, string[]>? Parameters { get; set; }
+    }
+
     public class OAuthTokenResponse
     {
         [JsonPropertyName("access_token")]

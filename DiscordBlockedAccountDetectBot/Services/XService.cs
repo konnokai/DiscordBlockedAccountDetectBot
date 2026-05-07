@@ -79,7 +79,7 @@ namespace DiscordBlockedAccountDetectBot.Services
             {
                 while (true)
                 {
-                    await Task.Delay(TimeSpan.FromMinutes(16));
+                    await Task.Delay(TimeSpan.FromHours(1));
                     try
                     {
                          await SyncBlockedListAsync();
@@ -170,7 +170,7 @@ namespace DiscordBlockedAccountDetectBot.Services
 
             var response = await _httpClient.SendAsync(request);
             var respContent = await response.Content.ReadAsStringAsync();
-            response.EnsureSuccessStatusCode();
+            await ThrowIfErrorResponseAsync(response);
 
             _currentToken = JsonSerializer.Deserialize<OAuthTokenResponse>(respContent);
             if (_currentToken != null)
@@ -259,7 +259,7 @@ namespace DiscordBlockedAccountDetectBot.Services
                 
                     await ExtractAndSaveRateLimitAsync(responseMe.Headers, "users_me");
 
-                    responseMe.EnsureSuccessStatusCode();
+                    await ThrowIfErrorResponseAsync(responseMe);
                     var meData = JsonSerializer.Deserialize<XUserResponse>(await responseMe.Content.ReadAsStringAsync());
                     myId = meData?.Data?.Id ?? string.Empty;
 
@@ -296,7 +296,7 @@ namespace DiscordBlockedAccountDetectBot.Services
                          break; // Stop and save what we have or wait? 15 min wait is too long for main thread. Just break.
                     }
                     
-                    responseBlock.EnsureSuccessStatusCode();
+                    await ThrowIfErrorResponseAsync(responseBlock);
 
                     var blockData = JsonSerializer.Deserialize<XBlockingResponse>(await responseBlock.Content.ReadAsStringAsync());
                     
@@ -348,6 +348,47 @@ namespace DiscordBlockedAccountDetectBot.Services
                     }
                 }
             }
+        }
+
+        private async Task ThrowIfErrorResponseAsync(HttpResponseMessage response)
+        {
+            if (response.IsSuccessStatusCode) return;
+
+            var body = await response.Content.ReadAsStringAsync();
+            string errorMessage = $"HTTP {(int)response.StatusCode} {response.ReasonPhrase}";
+
+            try
+            {
+                var apiError = JsonSerializer.Deserialize<XApiError>(body);
+                if (apiError != null)
+                {
+                    var parts = new List<string>();
+                    if (!string.IsNullOrEmpty(apiError.Title)) parts.Add($"Title: {apiError.Title}");
+                    if (!string.IsNullOrEmpty(apiError.Detail)) parts.Add($"Detail: {apiError.Detail}");
+                    if (!string.IsNullOrEmpty(apiError.Type)) parts.Add($"Type: {apiError.Type}");
+                    if (apiError.Status.HasValue) parts.Add($"Status: {apiError.Status}");
+                    if (!string.IsNullOrEmpty(apiError.Reason)) parts.Add($"Reason: {apiError.Reason}");
+                    if (!string.IsNullOrEmpty(apiError.RequiredEnrollment)) parts.Add($"Required Enrollment: {apiError.RequiredEnrollment}");
+                    if (!string.IsNullOrEmpty(apiError.RegistrationUrl)) parts.Add($"Registration URL: {apiError.RegistrationUrl}");
+                    if (!string.IsNullOrEmpty(apiError.ClientId)) parts.Add($"Client ID: {apiError.ClientId}");
+                    if (apiError.Errors != null && apiError.Errors.Count > 0)
+                    {
+                        var errMsgs = apiError.Errors
+                            .Where(e => !string.IsNullOrEmpty(e.Message))
+                            .Select(e => e.Message!);
+                        if (errMsgs.Any()) parts.Add($"Errors: [{string.Join(", ", errMsgs)}]");
+                    }
+                    if (parts.Count > 0)
+                        errorMessage += " - " + string.Join(", ", parts);
+                }
+            }
+            catch
+            {
+                if (!string.IsNullOrWhiteSpace(body))
+                    errorMessage += $" - Body: {body}";
+            }
+
+            throw new HttpRequestException(errorMessage, null, response.StatusCode);
         }
 
         private async Task ExtractAndSaveRateLimitAsync(HttpResponseHeaders headers, string endpoint)
