@@ -26,8 +26,8 @@ namespace DiscordBlockedAccountDetectBot.Services
             "www.vxtwitter.com" ,"vxtwitter.com" ,
             "www.fxtwitter.com" ,"fxtwitter.com" };
 
-        // Regex to extract the host and path from URLs
-        private static readonly Regex UrlRegex = new Regex(@"https?:\/\/([a-zA-Z0-9\-\.]+)\/[a-zA-Z0-9_]+\/status\/[0-9]+", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+        // Regex to extract the host, username and tweet ID from URLs
+        private static readonly Regex UrlRegex = new Regex(@"https?:\/\/([a-zA-Z0-9\-\.]+)\/[a-zA-Z0-9_]+\/status\/([0-9]+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
         public DiscordBotService(
             BotConfig config,
@@ -146,50 +146,36 @@ namespace DiscordBlockedAccountDetectBot.Services
                 var host = match.Groups[1].Value.ToLower();
                 if (AllowedHosts.Contains(host))
                 {
-                    await ProcessLinkAsync(message, match.Value);
+                    var tweetId = match.Groups[2].Value;
+                    await ProcessLinkAsync(message, match.Value, tweetId);
                 }
             }
         }
 
-        private async Task ProcessLinkAsync(SocketMessage message, string url)
+        private async Task ProcessLinkAsync(SocketMessage message, string url, string tweetId)
         {
             try
             {
                 _logger.LogInformation("Start fetch: {url}", url);
 
-                // Replace domain with api.vxtwitter.com
-                var uri = new Uri(url);
-                var builder = new UriBuilder(uri)
-                {
-                    Host = "api.vxtwitter.com"
-                };
+                var apiUrl = $"https://api.fxtwitter.com/2/status/{tweetId}";
 
-                var apiUrl = builder.ToString();
-
-                var httpClient = _httpClientFactory.CreateClient("VXApi");
+                var httpClient = _httpClientFactory.CreateClient("FxApi");
                 var response = await httpClient.GetAsync(apiUrl);
 
                 if (!response.IsSuccessStatusCode)
                 {
-                    // If fetch fails, maybe warn? Or ignore? Prompt says: "若其中一個流程出錯則反應一個 ⚠️"
-                    // "Fetching data" is a process.
                     await message.AddReactionAsync(new Emoji("🛠️"));
-                    _logger.LogWarning("Failed to fetch api.vxtwitter.com: {response.ReasonPhrase}", response.ReasonPhrase);
+                    _logger.LogWarning("Failed to fetch api.fxtwitter.com: {ReasonPhrase}", response.ReasonPhrase);
                     return;
                 }
 
-                var responseContext = await response.Content.ReadAsStringAsync();
-                if (responseContext.Contains("Failed to scan your link"))
-                {
-                    _logger.LogWarning("api.vxtwitter.com returned failure for URL: {url}", url);
-                    await message.AddReactionAsync(new Emoji("🛠️"));
-                }
-
-                var tweetData = JsonSerializer.Deserialize<VXTwitterResponse>(responseContext);
-                if (tweetData != null && !string.IsNullOrEmpty(tweetData.UserScreenName))
+                var responseContent = await response.Content.ReadAsStringAsync();
+                var tweetData = JsonSerializer.Deserialize<FxEmbedResponse>(responseContent);
+                if (tweetData?.Status?.Author != null && !string.IsNullOrEmpty(tweetData.Status.Author.ScreenName))
                 {
                     // Check if blocked
-                    var isBlocked = await _redisService.IsUserBlockedAsync(tweetData.UserScreenName);
+                    var isBlocked = await _redisService.IsUserBlockedAsync(tweetData.Status.Author.ScreenName);
                     if (isBlocked)
                     {
                         await message.AddReactionAsync(new Emoji("⛔"));
@@ -197,9 +183,6 @@ namespace DiscordBlockedAccountDetectBot.Services
                 }
                 else
                 {
-                    // Parsing failed or no user name? 
-                    // Is this an error flow? "若其中一個流程出錯"
-                    // If we got 200 OK but bad JSON, it's an error.
                     await message.AddReactionAsync(new Emoji("🛠️"));
                 }
             }

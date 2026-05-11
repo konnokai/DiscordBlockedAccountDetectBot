@@ -33,18 +33,25 @@ namespace DiscordBlockedAccountDetectBot.Models
         public string? NextToken { get; set; }
     }
     
-    public class VXTwitterResponse
+    public class FxEmbedResponse
     {
-        [JsonPropertyName("text")]
-        public string Text { get; set; } = string.Empty;
-         [JsonPropertyName("tweetID")]
-        public string TweetId { get; set; } = string.Empty;
-         [JsonPropertyName("tweetURL")]
-        public string TweetUrl { get; set; } = string.Empty;
-         [JsonPropertyName("user_name")]
-        public string UserName { get; set; } = string.Empty;
-        [JsonPropertyName("user_screen_name")]
-        public string UserScreenName { get; set; } = string.Empty;
+        [JsonPropertyName("code")]
+        public int Code { get; set; }
+
+        [JsonPropertyName("status")]
+        public FxEmbedStatus? Status { get; set; }
+    }
+
+    public class FxEmbedStatus
+    {
+        [JsonPropertyName("author")]
+        public FxEmbedAuthor? Author { get; set; }
+    }
+
+    public class FxEmbedAuthor
+    {
+        [JsonPropertyName("screen_name")]
+        public string ScreenName { get; set; } = string.Empty;
     }
 
     public class XApiError

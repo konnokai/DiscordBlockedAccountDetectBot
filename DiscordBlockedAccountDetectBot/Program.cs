@@ -58,7 +58,7 @@ namespace DiscordBlockedAccountDetectBot
                         {
                             client.DefaultRequestHeaders.Add("User-Agent", "DiscordBlockedAccountDetectBot/1.0");
                         });
-                    services.AddHttpClient("VXApi")
+                    services.AddHttpClient("FxApi")
                         .ConfigureHttpClient(client =>
                         {
                             client.DefaultRequestHeaders.Add("User-Agent", "DiscordBlockedAccountDetectBot/1.0");
