@@ -79,7 +79,7 @@ namespace DiscordBlockedAccountDetectBot.Services
             {
                 while (true)
                 {
-                    await Task.Delay(TimeSpan.FromHours(1));
+                    await Task.Delay(TimeSpan.FromDays(1));
                     try
                     {
                          await SyncBlockedListAsync();
