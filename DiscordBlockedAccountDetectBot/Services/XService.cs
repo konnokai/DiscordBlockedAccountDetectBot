@@ -70,26 +70,6 @@ namespace DiscordBlockedAccountDetectBot.Services
                     await RefreshTokenAsync();
                 }
             }
-
-            // 2. Initial Sync
-            await SyncBlockedListAsync();
-
-            // 3. Start Loop
-            _ = Task.Run(async () =>
-            {
-                while (true)
-                {
-                    await Task.Delay(TimeSpan.FromDays(1));
-                    try
-                    {
-                         await SyncBlockedListAsync();
-                    }
-                    catch(Exception ex)
-                    {
-                        _logger.LogError(ex, "Error in Sync loop");
-                    }
-                }
-            });
         }
 
         private async Task PerformLoginFlowAsync()
@@ -333,8 +313,6 @@ namespace DiscordBlockedAccountDetectBot.Services
                     // In a real strict environment we might wait or throw. 
                     // This is a background task, so waiting 15 mins might be okay OR we just skip this sync cycle.
                     // Given the loop is 16 mins, maybe we just throw or return?
-                    // "將其數值存取存放至 redis 內" - The requirement is mostly about storing it.
-                    // But if we don't respect it, we just get 429.
                     
                     // Let's create a custom exception or just throw generic to abort this sync.
                     if (waitTime.TotalMinutes > 15) {

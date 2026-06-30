@@ -64,7 +64,7 @@ namespace DiscordBlockedAccountDetectBot.Services
             try
             {
                 // 2. Initialize X Service (OAuth etc)
-                // This will perform login flow if needed, check existing token, and sync blocked list.
+                // This will perform login flow if needed and check existing token.
                 _logger.LogInformation("Initializing X Service...");
                 await _xService.InitializeAsync();
                 _logger.LogInformation("X Service Initialized successfully.");
@@ -79,6 +79,8 @@ namespace DiscordBlockedAccountDetectBot.Services
             // 3. Start Discord Bot
             _client.Log += LogAsync;
             _client.MessageReceived += OnMessageReceivedAsync;
+            _client.Ready += OnReadyAsync;
+            _client.SlashCommandExecuted += OnSlashCommandExecutedAsync;
 
             try
             {
@@ -149,6 +151,49 @@ namespace DiscordBlockedAccountDetectBot.Services
                     var tweetId = match.Groups[2].Value;
                     await ProcessLinkAsync(message, match.Value, tweetId);
                 }
+            }
+        }
+
+        private async Task OnReadyAsync()
+        {
+            var command = new SlashCommandBuilder()
+                .WithName("sync-blocked-user-list")
+                .WithDescription("同步 X 封鎖清單至 Redis")
+                .WithDefaultMemberPermissions(GuildPermission.Administrator);
+
+            try
+            {
+                await _client.CreateGlobalApplicationCommandAsync(command.Build());
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to register slash command");
+            }
+        }
+
+        private async Task OnSlashCommandExecutedAsync(SocketSlashCommand command)
+        {
+            if (command.CommandName != "sync-blocked-user-list") return;
+
+            // ponytail: owner check via application info, avoids a new config value.
+            // Team-owned apps have a null Owner; this bot is single-owner.
+            var appInfo = await _client.GetApplicationInfoAsync();
+            if (appInfo.Owner == null || command.User.Id != appInfo.Owner.Id)
+            {
+                await command.RespondAsync("此指令僅限 Bot 擁有者使用。", ephemeral: true);
+                return;
+            }
+
+            await command.DeferAsync(ephemeral: true); // sync can take longer than the 3s response window
+            try
+            {
+                await _xService.SyncBlockedListAsync();
+                await command.FollowupAsync("封鎖清單同步完成。", ephemeral: true);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Manual sync blocked list failed");
+                await command.FollowupAsync($"同步失敗：{ex.Message}", ephemeral: true);
             }
         }
 
