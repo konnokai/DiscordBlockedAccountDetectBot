@@ -18,22 +18,40 @@ namespace DiscordBlockedAccountDetectBot.Services
             _db = _redis.GetDatabase(0);
         }
 
-        public async Task SaveBlockedUsersAsync(IEnumerable<string> usernames)
-        {
-            if (usernames == null || !usernames.Any()) return;
-
-            var transaction = _db.CreateTransaction();
-            _ = transaction.KeyDeleteAsync(BlockedUsersKey);
-            // Store as lowercase for case-insensitive comparison
-            var redisValues = usernames.Select(u => (RedisValue)u.ToLowerInvariant()).ToArray();
-            _ = transaction.SetAddAsync(BlockedUsersKey, redisValues);
-            await transaction.ExecuteAsync();
-        }
-
         public async Task<bool> IsUserBlockedAsync(string username)
         {
             if (string.IsNullOrEmpty(username)) return false;
             return await _db.SetContainsAsync(BlockedUsersKey, username.ToLowerInvariant());
+        }
+
+        public async Task<long> GetBlockedUsersCountAsync()
+        {
+            return await _db.SetLengthAsync(BlockedUsersKey);
+        }
+
+        // Returns the subset of usernames (original case) not already stored. One round-trip via batch SetContains.
+        public async Task<List<string>> FilterNewUsersAsync(IReadOnlyList<string> usernames)
+        {
+            if (usernames == null || usernames.Count == 0) return new List<string>();
+
+            var values = usernames.Select(u => (RedisValue)u.ToLowerInvariant()).ToArray();
+            var exists = await _db.SetContainsAsync(BlockedUsersKey, values);
+
+            var result = new List<string>();
+            for (int i = 0; i < usernames.Count; i++)
+            {
+                if (!exists[i]) result.Add(usernames[i]);
+            }
+            return result;
+        }
+
+        // Incremental add: only adds, never removes. Unblocked users are not pruned from Redis.
+        public async Task AddBlockedUsersAsync(IEnumerable<string> usernames)
+        {
+            if (usernames == null) return;
+            var values = usernames.Select(u => (RedisValue)u.ToLowerInvariant()).ToArray();
+            if (values.Length == 0) return;
+            await _db.SetAddAsync(BlockedUsersKey, values);
         }
 
         public async Task SaveRateLimitAsync(string endpoint, int limit, int remaining, long reset)

@@ -202,12 +202,11 @@ namespace DiscordBlockedAccountDetectBot.Services
             return false;
         }
 
-        public async Task SyncBlockedListAsync()
+        public async Task<BlockedSyncResult> SyncBlockedListAsync()
         {
-             if (_currentToken == null) 
+             if (_currentToken == null)
              {
-                 _logger.LogWarning("Cannot sync blocked list, no token.");
-                 return;
+                 throw new Exception("No X token available, cannot sync blocked list.");
              }
 
              // Auto Refresh if needed
@@ -216,8 +215,7 @@ namespace DiscordBlockedAccountDetectBot.Services
                  var refreshSuccess = await RefreshTokenAsync();
                  if (!refreshSuccess)
                  {
-                     _logger.LogWarning("Token refresh failed. Aborting sync blocked list.");
-                     return;
+                     throw new Exception("Token refresh failed, cannot sync blocked list.");
                  }
              }
 
@@ -251,14 +249,21 @@ namespace DiscordBlockedAccountDetectBot.Services
                 }
 
                 // 2. Get Blocking
-                List<string> blockedUsernames = new List<string>();
+                // Incremental sync: X returns blocks roughly newest-first, so once a whole page is
+                // already in Redis we assume the rest is too and stop — this avoids re-pulling the
+                // full list every time. ponytail: relies on newest-first order X does not formally
+                // guarantee; if it changes, drop the early-stop and go back to full pagination.
+                // max_results=10 keeps over-fetch on the stopping page minimal (more requests on a
+                // cold first sync, near-zero cost on warm incremental syncs).
+                long beforeCount = await _redisService.GetBlockedUsersCountAsync();
+                var addedUsers = new List<string>();
                 string? nextToken = null;
-                
-                do 
+
+                do
                 {
                     await CheckRateLimitAsync("users_blocking");
 
-                    var url = $"https://api.x.com/2/users/{myId}/blocking?max_results=1000";
+                    var url = $"https://api.x.com/2/users/{myId}/blocking?max_results=10";
                     if (!string.IsNullOrEmpty(nextToken))
                     {
                         url += $"&pagination_token={nextToken}";
@@ -267,36 +272,46 @@ namespace DiscordBlockedAccountDetectBot.Services
                     var requestBlock = new HttpRequestMessage(HttpMethod.Get, url);
                     requestBlock.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _currentToken.AccessToken);
                     var responseBlock = await _httpClient.SendAsync(requestBlock);
-                    
+
                     await ExtractAndSaveRateLimitAsync(responseBlock.Headers, "users_blocking");
-                    
+
                     if(responseBlock.StatusCode == HttpStatusCode.TooManyRequests)
                     {
                          _logger.LogWarning("Rate limit hit while fetching blocked users. Saving partial list.");
                          break; // Stop and save what we have or wait? 15 min wait is too long for main thread. Just break.
                     }
-                    
+
                     await ThrowIfErrorResponseAsync(responseBlock);
 
                     var blockData = JsonSerializer.Deserialize<XBlockingResponse>(await responseBlock.Content.ReadAsStringAsync());
-                    
-                    if (blockData?.Data != null)
+
+                    var pageUsernames = blockData?.Data?.Select(u => u.Username).ToList() ?? new List<string>();
+                    if (pageUsernames.Count == 0) break;
+
+                    var newUsers = await _redisService.FilterNewUsersAsync(pageUsernames);
+                    if (newUsers.Count == 0)
                     {
-                        blockedUsernames.AddRange(blockData.Data.Select(u => u.Username));
+                        // Whole page already known -> assume everything after is older/known too.
+                        break;
                     }
-                    
+
+                    addedUsers.AddRange(newUsers);
+                    await _redisService.AddBlockedUsersAsync(newUsers);
+
                     nextToken = blockData?.Meta?.NextToken;
 
                 } while (!string.IsNullOrEmpty(nextToken));
 
-                // 3. Save to Redis
-                await _redisService.SaveBlockedUsersAsync(blockedUsernames);
-                _logger.LogInformation($"Synced {blockedUsernames.Count} blocked users to Redis.");
+                long afterCount = await _redisService.GetBlockedUsersCountAsync();
+                _logger.LogInformation("Synced blocked users. Before: {Before}, After: {After}, Added: {Added}.",
+                    beforeCount, afterCount, addedUsers.Count);
 
+                return new BlockedSyncResult(beforeCount, afterCount, addedUsers);
              }
              catch(Exception ex)
              {
                  _logger.LogError(ex, "Failed to sync blocked list.");
+                 throw; // let the caller report the failure instead of silently reporting success
              }
         }
 
@@ -406,4 +421,6 @@ namespace DiscordBlockedAccountDetectBot.Services
                  .Replace("=", "");
         }
     }
+
+    public record BlockedSyncResult(long Before, long After, IReadOnlyList<string> Added);
 }

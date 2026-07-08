@@ -3,6 +3,7 @@ using Discord.WebSocket;
 using DiscordBlockedAccountDetectBot.Models;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -187,8 +188,21 @@ namespace DiscordBlockedAccountDetectBot.Services
             await command.DeferAsync(ephemeral: true); // sync can take longer than the 3s response window
             try
             {
-                await _xService.SyncBlockedListAsync();
-                await command.FollowupAsync("封鎖清單同步完成。", ephemeral: true);
+                var result = await _xService.SyncBlockedListAsync();
+
+                var sb = new StringBuilder();
+                sb.AppendLine("封鎖清單同步完成。");
+                sb.AppendLine($"同步前:{result.Before} 人 → 同步後:{result.After} 人");
+                sb.AppendLine($"新增:{result.Added.Count} 人");
+                if (result.Added.Count > 0)
+                {
+                    const int maxShown = 50; // keep the message under Discord's 2000-char limit
+                    var shown = result.Added.Take(maxShown);
+                    sb.AppendLine("新增清單:" + string.Join("、", shown)
+                        + (result.Added.Count > maxShown ? $"…(僅顯示前 {maxShown} 人)" : ""));
+                }
+
+                await command.FollowupAsync(sb.ToString(), ephemeral: true);
             }
             catch (Exception ex)
             {
